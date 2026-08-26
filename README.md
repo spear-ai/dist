@@ -70,7 +70,7 @@ only `gdal-v*` tags as versions for this tool and strips the prefix, so
 
 Renovate's mise manager cannot see a `[tool_alias]` entry — it resolves bare tool
 names against mise's public registry — so consumers need one `customManager`
-**per package**, and each **must** set `versioning: "loose"`:
+**per package**, and each **must** set `versioningTemplate: "loose"`:
 
 ```json
 {

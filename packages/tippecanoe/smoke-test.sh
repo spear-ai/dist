@@ -71,9 +71,14 @@ done
 # the `$(` instead, and the script dies with "syntax error near unexpected
 # token `newline'". bash 5 parses it fine, so it passes on any developer
 # machine with a Homebrew bash and fails only in CI.
+# The three patterns are the portable way to enumerate every entry including
+# hidden ones without also matching `.` and `..`: a stray .DS_Store would
+# otherwise ship inside the tarball while this check reported bin/ as clean.
+# -L as well as -e because -e follows symlinks, so a dangling one reads as
+# absent -- and an unmatched pattern stays literal, which both tests reject.
 extra=""
-for path in "$TREE"/bin/*; do
-  [ -e "$path" ] || continue          # an empty bin/ leaves the glob unexpanded
+for path in "$TREE"/bin/* "$TREE"/bin/.[!.]* "$TREE"/bin/..?*; do
+  [ -e "$path" ] || [ -L "$path" ] || continue
   f="${path##*/}"
   case " $BINS " in
     *" $f "*) ;;
