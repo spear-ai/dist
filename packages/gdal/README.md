@@ -194,6 +194,38 @@ Notable exclusions, and what to do if you need them:
 | PostgreSQL | No `PG:` connection strings. | Add libpq, `-DGDAL_USE_POSTGRESQL=ON` |
 | Python bindings | Built from the PyPI sdist by `uv` instead, against your own pinned Python. | n/a — the Homebrew ones target its Python, not yours |
 
+## The C++ runtime must stay dynamic
+
+`libgdal` links `libstdc++` dynamically and must keep doing so. Building with
+`-static-libstdc++` gives it a private `operator new`/`delete`, `__cxa_throw` and
+RTTI, while the PyPI bindings' `_gdal.so` — compiled on the consumer's machine —
+links `libstdc++.so.6`. That puts two C++ runtimes in one process. SWIG wraps
+every GDAL call in try/catch to turn C++ exceptions into Python ones, so
+exceptions and C++ objects cross that boundary constantly, and duplicated
+`type_info` means a `catch` can fail to match. GCC's own documentation requires
+the *shared* libgcc for precisely this case.
+
+This is not theoretical — it shipped once. `gdal-v3.13.2.1787749444` carried a
+private runtime and segfaulted (exit 139) in horizon's nautical pipeline under an
+8-thread pool. The identical code on the identical runner converted 348 cells
+once `libgdal` shared the process runtime.
+
+What makes it dangerous is that it hides from functional tests. Single-threaded
+use passed, and so did deliberate threaded stress against the broken build —
+2400 exceptions across the boundary and 1600 PROJ/GEOS transform cycles. So
+`smoke-test.sh` asserts the invariant structurally instead of hoping to trigger
+it:
+
+```
+ok   libgdal links libstdc++.so.6 dynamically
+ok   no duplicate C++ runtime symbols in libgdal
+```
+
+Static linking *looks* like a portability win and is not one. gcc-toolset links
+the base system's libstdc++ ABI dynamically and statically includes only the
+newer symbols, so the shipped library needs `GLIBCXX_3.4.22` while AlmaLinux 8
+provides `3.4.25`. manylinux whitelists `libstdc++.so.6` regardless.
+
 ## `GDAL_DATA` is load-bearing
 
 Because this build is relocatable, GDAL finds its resource files **only** through
