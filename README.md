@@ -44,15 +44,12 @@ Workflows must live at the repository root, so they are named per package:
 gdal = "github:spear-ai/dist"
 
 [tools]
-gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{version}}-{{os()}}-{{arch()}}.tar.gz" }
+gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz" }
 ```
 
 `version_prefix` is what lets several packages share one repository: mise lists
 only `gdal-v*` tags as versions for this tool and strips the prefix, so
 `mise ls-remote gdal` shows `3.13.2`.
-
-Releases carry GitHub build provenance attestations, which mise verifies by
-default.
 
 ## Adding a package
 
