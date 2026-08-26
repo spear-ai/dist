@@ -18,9 +18,14 @@ here="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 # shellcheck disable=SC1091
 . "$here/versions.env"
 
-ts="$(git -C "$here" log -1 --format=%ct 2>/dev/null || true)"
+# Keep git's own diagnostic: swallowing it once turned a one-line CI failure
+# into a guessing game.
+err="$(mktemp)"
+trap 'rm -f "$err"' EXIT
+ts="$(git -C "$here" log -1 --format=%ct 2>"$err" || true)"
 if [ -z "$ts" ]; then
-  echo "dist-version.sh: no commit timestamp available (not a git checkout?)" >&2
+  echo "dist-version.sh: could not read the commit timestamp." >&2
+  sed 's/^/  git: /' "$err" >&2
   exit 1
 fi
 

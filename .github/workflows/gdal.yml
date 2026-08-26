@@ -60,6 +60,13 @@ jobs:
       # fetch-depth 1 still fetches the commit object, which is all %ct needs.
       - uses: actions/checkout@v7
 
+      # checkout records its safe.directory entry under a temporary HOME that
+      # later steps do not see, so git in a container refuses the workspace as
+      # dubiously owned -- the runner owns it, the container runs as root.
+      # dist-version.sh needs git to read the commit, so declare it here.
+      - name: Mark the workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
       # The manylinux image already ships cmake, bzip2, gcc 14 and binutils;
       # only ninja is missing.
       - name: Install ninja (Linux)
