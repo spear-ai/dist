@@ -105,8 +105,42 @@ a regression in PROJ embedding cannot hide behind a stray environment variable.
 3. It then produces all three tarballs, smoke-tests each, attaches
    `SHA256SUMS`, and attests build provenance — which `mise` verifies by default.
 
-Rebuilding the same GDAL version (a toolchain fix, say) gets a fourth version
-component: `gdal-v3.13.2.1`. Never re-tag, since the checksums change.
+### Version scheme
+
+A release is `<gdal version>.<commit timestamp>` — the upstream version from
+`versions.env`, plus the Unix timestamp of the commit being released.
+`./dist-version.sh` prints it, and both `build.sh` and the release workflow call
+that one script so they cannot disagree:
+
+```console
+$ packages/gdal/dist-version.sh
+3.13.2.1787743451
+```
+
+The revision is the **commit's** timestamp, not the clock's, for two reasons.
+The three platform jobs finish up to twenty minutes apart, so a build-time clock
+would stamp three different versions onto a single release and none of them
+would resolve. And deriving it from the commit makes a tag reproducible — there
+is no number to set wrong or forget to reset when `GDAL_VERSION` moves.
+
+Ordering falls out of the upstream components coming first, so a `3.13.3` built
+from an older commit still sorts above a later `3.13.2` rebuild:
+
+```
+3.13.2.1787743451 > 3.13.2.1787743019   later rebuild of the same version
+3.13.3.1000000000 > 3.13.2.1787743451   upstream bump always wins
+3.13.2.1787743019 > 3.13.2              a bare version sorts as .0
+```
+
+To release, tag the merged commit with what the script reports:
+
+```shell
+git tag "gdal-v$(packages/gdal/dist-version.sh)"
+```
+
+The workflow refuses to publish if the tag and the commit disagree. Never re-tag
+a published version, since the checksums change.
+
 
 `versions.env` pins every input by version and SHA256, so a tag rebuilds
 identically later. Bumping a dependency is a one-line change there.

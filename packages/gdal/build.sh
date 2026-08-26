@@ -24,6 +24,9 @@ OUT="${OUT_DIR:-$WORK/out}"       # exactly what lands in the tarball
 DIST="${DIST_DIR:-$WORK/dist}"
 JOBS="${JOBS:-$( (command -v nproc >/dev/null && nproc) || sysctl -n hw.ncpu || echo 4 )}"
 
+# Derived from the commit, so every platform job agrees and a tag reproduces.
+DIST_VERSION="$("$ROOT/dist-version.sh")"
+
 log() { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------- platform --
@@ -382,8 +385,13 @@ fi
 rm -rf "$OUT/lib"/*.a "$OUT/share/proj" "$OUT/share/doc" "$OUT/share/man" 2>/dev/null || true
 
 # ------------------------------------------------------------------ package --
-TARBALL="gdal-${GDAL_VERSION}-${PLATFORM}.tar.gz"
+TARBALL="gdal-${DIST_VERSION}-${PLATFORM}.tar.gz"
 log "package $TARBALL"
+# Start from an empty dist dir. A rerun after a version or revision change
+# otherwise leaves the previous tarball beside the new one, and the release
+# workflow uploads everything it finds -- which would attach an asset from a
+# different version to the release.
+rm -rf "$DIST"
 mkdir -p "$DIST"
 tar -C "$OUT" -czf "$DIST/$TARBALL" .
 ( cd "$DIST" && { command -v sha256sum >/dev/null && sha256sum "$TARBALL" || shasum -a 256 "$TARBALL"; } > "$TARBALL.sha256" )

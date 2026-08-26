@@ -55,5 +55,8 @@ jobs:
             CI builds and smoke-tests this PR on all three platforms. Merging
             does not publish anything: tag the merged commit
             `gdal-v${{ steps.check.outputs.version }}` to cut the release.
+            The build revision is the commit's Unix timestamp, so there is
+            nothing else to bump: tag with
+            `gdal-v$(packages/gdal/dist-version.sh)` once merged.
 
             Remember to bump the matching `gdal==` pin in `horizon-cartography`.
