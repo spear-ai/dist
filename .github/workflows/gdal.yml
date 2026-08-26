@@ -64,18 +64,14 @@ jobs:
           /opt/python/cp312-cp312/bin/pip install --no-cache-dir ninja
           echo "/opt/python/cp312-cp312/bin" >> "$GITHUB_PATH"
 
-      - name: Install ninja (macOS)
+      # The manylinux image already ships cmake, bzip2, gcc 14, binutils and
+      # uv, so only macOS needs these. uv matters because the smoke test builds
+      # the PyPI bindings the way the consuming project does; its
+      # `python -m venv` fallback can land on an interpreter that drops
+      # LDFLAGS, failing the rpath assertion for reasons unrelated to the build.
+      - name: Install ninja and uv (macOS)
         if: runner.os == 'macOS'
-        run: brew install ninja
-
-      # The manylinux image already ships uv; only macOS needs it. The smoke
-      # test builds the PyPI bindings the way the consuming project does, with
-      # uv, and its `python -m venv` fallback can land on an interpreter that
-      # drops LDFLAGS -- which fails the rpath assertion for reasons unrelated
-      # to the build.
-      - name: Install uv (macOS)
-        if: runner.os == 'macOS'
-        uses: astral-sh/setup-uv@v10
+        run: brew install ninja uv
 
       - name: Override GDAL version
         if: inputs.gdal_version != ''
