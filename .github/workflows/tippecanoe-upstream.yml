@@ -1,0 +1,84 @@
+name: "tippecanoe: check for new releases"
+
+# felt/tippecanoe ships a patch every few weeks. This opens a PR bumping
+# versions.env; the tippecanoe workflow then builds and smoke-tests that PR on
+# all three platforms, so review is the only manual step.
+on:
+  schedule:
+    - cron: "30 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        shell: bash
+        working-directory: packages/tippecanoe
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare upstream against versions.env
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          . ./versions.env
+          # Upstream tags are bare versions (`2.79.0`), not `v`-prefixed.
+          latest="$(gh release list -R felt/tippecanoe --limit 20 --exclude-drafts --exclude-pre-releases \
+                    --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -1)"
+          echo "current=$TIPPECANOE_VERSION  latest=$latest"
+          if [ "$latest" = "$TIPPECANOE_VERSION" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          # There is no release asset to hash -- see the package README -- so
+          # the bump resolves the tag to the commit it points at.
+          # `git ls-remote` prints refs in ref-name order, not in the order the
+          # patterns were given, and for an annotated tag `refs/tags/X` (the tag
+          # object) sorts before `refs/tags/X^{}` (the commit it points at). So
+          # take the dereferenced line when there is one and the bare ref only
+          # as the fallback for a lightweight tag -- `head -1` would hand back
+          # a tag-object SHA that `git rev-parse HEAD` can never equal.
+          refs="$(git ls-remote https://github.com/felt/tippecanoe.git \
+                  "refs/tags/${latest}^{}" "refs/tags/${latest}")"
+          sha="$(printf '%s\n' "$refs" | awk '
+            $2 ~ /\^\{\}$/  { deref = $1 }
+            $2 !~ /\^\{\}$/ { bare = $1 }
+            END { print (deref != "" ? deref : bare) }')"
+          if [ -z "$sha" ]; then
+            echo "release $latest exists but its tag does not resolve" >&2; exit 1
+          fi
+          sed -i -e "s/^TIPPECANOE_VERSION=.*/TIPPECANOE_VERSION=${latest}/" \
+                 -e "s/^TIPPECANOE_COMMIT=.*/TIPPECANOE_COMMIT=${sha}/" versions.env
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+      - name: Open bump PR
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: bump-tippecanoe-${{ steps.check.outputs.version }}
+          title: "Bump tippecanoe to ${{ steps.check.outputs.version }}"
+          commit-message: "Bump tippecanoe to ${{ steps.check.outputs.version }}"
+          body: |
+            Upstream released tippecanoe ${{ steps.check.outputs.version }},
+            tagged at `${{ steps.check.outputs.sha }}`.
+
+            CI builds and smoke-tests this PR on all three platforms. `build.sh`
+            additionally refuses to build unless the clone's `HEAD` is that
+            commit and the source's own `version.hpp` agrees with the version
+            in `versions.env`, so a moved tag fails the build rather than
+            shipping.
+
+            Merging does not publish anything. The build revision is the
+            commit's Unix timestamp, so there is nothing else to bump: tag with
+            `tippecanoe-v$(packages/tippecanoe/dist-version.sh)` once merged.
+
+            Remember to bump the matching `tippecanoe` pin in `horizon`'s
+            `mise.toml` (Renovate opens that PR once the release exists).

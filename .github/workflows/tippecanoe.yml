@@ -1,0 +1,170 @@
+name: "tippecanoe: build and release"
+
+# Tags are package-scoped because this repo publishes several distributions.
+# `tippecanoe-v2.79.0.<ts>` releases that build; consumers strip the prefix with
+# mise's `version_prefix`. A pull request touching the package builds and
+# smoke-tests all three platforms without publishing, so a version bump is
+# proven before it is ever tagged.
+on:
+  push:
+    tags: ["tippecanoe-v*"]
+  pull_request:
+    paths:
+      - "packages/tippecanoe/**"
+      - ".github/workflows/tippecanoe.yml"
+  workflow_dispatch:
+    inputs:
+      tippecanoe_version:
+        description: "Override tippecanoe version, e.g. 2.80.0 (defaults to versions.env)"
+        required: false
+        type: string
+
+# Least privilege: only the release job writes anything. Build jobs, including
+# the ones that run on pull requests, get read-only access.
+permissions:
+  contents: read
+
+concurrency:
+  group: tippecanoe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    defaults:
+      run:
+        # Actions selects `sh` inside a container and bash on host runners.
+        # Naming bash keeps every step identical across the matrix.
+        shell: bash
+        working-directory: packages/tippecanoe
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-arm64
+            runner: macos-15
+            container: ""
+          - platform: linux-x64
+            runner: ubuntu-24.04
+            # manylinux_2_28 pins the glibc floor at 2.28, so the tarball runs
+            # on Ubuntu 20.04+, Debian 10+ and RHEL 8+. Building on a bare
+            # ubuntu-24.04 runner would require glibc 2.39 on every consumer;
+            # smoke-test.sh asserts the floor rather than trusting the image.
+            container: quay.io/pypa/manylinux_2_28_x86_64
+          - platform: linux-arm64
+            runner: ubuntu-24.04-arm
+            container: quay.io/pypa/manylinux_2_28_aarch64
+
+    steps:
+      # fetch-depth 1 still fetches the commit object, which is all %ct needs.
+      - uses: actions/checkout@v7
+
+      # checkout records its safe.directory entry under a temporary HOME that
+      # later steps do not see, so git in a container refuses the workspace as
+      # dubiously owned -- the runner owns it, the container runs as root.
+      # dist-version.sh needs git to read the commit, so declare it here.
+      # This does not reproduce under Docker Desktop or OrbStack on macOS,
+      # which map the host uid to root and never trip the ownership check.
+      - name: Mark the workspace safe for git
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      # The manylinux image already ships gcc 14, binutils, make and git;
+      # tippecanoe needs no cmake, no ninja and no Python, so unlike the gdal
+      # workflow there is nothing to install on either platform.
+
+      - name: Override tippecanoe version
+        if: inputs.tippecanoe_version != ''
+        run: |
+          set -euo pipefail
+          v="${{ inputs.tippecanoe_version }}"
+          # The pin is a commit, so resolving the tag is the whole job. Fail
+          # loudly rather than building whatever `main` happens to be.
+          # `git ls-remote` prints refs in ref-name order, not in the order the
+          # patterns were given, and for an annotated tag `refs/tags/X` (the tag
+          # object) sorts before `refs/tags/X^{}` (the commit it points at). So
+          # take the dereferenced line when there is one and the bare ref only
+          # as the fallback for a lightweight tag -- `head -1` would hand back
+          # a tag-object SHA that `git rev-parse HEAD` can never equal.
+          refs="$(git ls-remote https://github.com/felt/tippecanoe.git \
+                  "refs/tags/${v}^{}" "refs/tags/${v}")"
+          sha="$(printf '%s\n' "$refs" | awk '
+            $2 ~ /\^\{\}$/  { deref = $1 }
+            $2 !~ /\^\{\}$/ { bare = $1 }
+            END { print (deref != "" ? deref : bare) }')"
+          if [ -z "$sha" ]; then
+            echo "no such tag upstream: $v" >&2; exit 1
+          fi
+          sed -i.bak -e "s/^TIPPECANOE_VERSION=.*/TIPPECANOE_VERSION=${v}/" \
+                     -e "s/^TIPPECANOE_COMMIT=.*/TIPPECANOE_COMMIT=${sha}/" versions.env
+          rm -f versions.env.bak
+          echo "Building tippecanoe ${v} (commit ${sha})"
+
+      - name: Verify the tag matches versions.env
+        if: startsWith(github.ref, 'refs/tags/tippecanoe-v')
+        run: |
+          set -euo pipefail
+          tagged="${GITHUB_REF_NAME#tippecanoe-v}"
+          expected="$(./dist-version.sh)"
+          if [ "$tagged" != "$expected" ]; then
+            echo "tag $GITHUB_REF_NAME does not match this commit" >&2
+            echo "  tag says:  $tagged" >&2
+            echo "  commit is: $expected" >&2
+            echo "Tag the commit you mean to release: git tag tippecanoe-v\$(packages/tippecanoe/dist-version.sh)" >&2
+            exit 1
+          fi
+
+      # Only the SQLite and zlib tarballs. tippecanoe itself is a shallow clone
+      # verified against its commit SHA on every run, which is a stronger check
+      # than re-hashing something restored from a cache.
+      - name: Cache sources
+        uses: actions/cache@v6
+        with:
+          path: packages/tippecanoe/work/cache
+          key: tippecanoe-src-${{ hashFiles('packages/tippecanoe/versions.env') }}
+
+      - name: Build
+        run: ./build.sh
+
+      - name: Smoke test
+        run: ./smoke-test.sh work/out
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: tippecanoe-${{ matrix.platform }}
+          path: packages/tippecanoe/work/dist/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/tippecanoe-v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write        # create the release
+      id-token: write        # sign the provenance attestation
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Collect checksums
+        run: |
+          cd dist
+          cat *.sha256 > SHA256SUMS
+          rm -f *.sha256
+          ls -lh
+
+      # Lets `mise` verify the tarball came from this workflow, not a
+      # look-alike upload. mise checks GitHub attestations by default.
+      - uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: dist/*.tar.gz
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          name: "tippecanoe ${{ github.ref_name }}"
+          files: dist/*
+          generate_release_notes: true
