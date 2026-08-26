@@ -17,6 +17,7 @@ jobs:
     runs-on: ubuntu-24.04
     defaults:
       run:
+        shell: bash
         working-directory: packages/gdal
     steps:
       - uses: actions/checkout@v7
@@ -27,7 +28,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          source versions.env
+          . ./versions.env
           latest="$(gh release list -R OSGeo/gdal --limit 20 --exclude-drafts --exclude-pre-releases \
                     --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -1)"
           echo "current=$GDAL_VERSION  latest=$latest"

@@ -35,6 +35,9 @@ jobs:
     container: ${{ matrix.container }}
     defaults:
       run:
+        # Actions selects `sh` inside a container and bash on host runners.
+        # Naming bash keeps every step identical across the matrix.
+        shell: bash
         working-directory: packages/gdal
     strategy:
       fail-fast: false
@@ -89,7 +92,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/gdal-v')
         run: |
           set -euo pipefail
-          source versions.env
+          . ./versions.env
           tagged="${GITHUB_REF_NAME#gdal-v}"
           if [ "$tagged" != "$GDAL_VERSION" ]; then
             echo "tag $GITHUB_REF_NAME does not match GDAL_VERSION=$GDAL_VERSION" >&2
