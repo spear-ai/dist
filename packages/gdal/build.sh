@@ -24,6 +24,9 @@ OUT="${OUT_DIR:-$WORK/out}"       # exactly what lands in the tarball
 DIST="${DIST_DIR:-$WORK/dist}"
 JOBS="${JOBS:-$( (command -v nproc >/dev/null && nproc) || sysctl -n hw.ncpu || echo 4 )}"
 
+# Derived from the commit, so every platform job agrees and a tag reproduces.
+DIST_VERSION="$("$ROOT/dist-version.sh")"
+
 log() { printf '\n\033[1;34m==>\033[0m \033[1m%s\033[0m\n' "$*"; }
 
 # ---------------------------------------------------------------- platform --

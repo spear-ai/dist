@@ -80,11 +80,11 @@ if [ -f "$TREE/share/gdal/s57objectclasses.csv" ]; then
 else
   fail "share/gdal/s57objectclasses.csv missing - S-57 cannot be read"
 fi
-if run "$TREE/bin/ogrinfo" --format S57 2>/dev/null | grep -q "Supports:"; then
-  pass "S57 driver metadata resolves via GDAL_DATA"
-else
-  fail "S57 driver metadata unavailable"
-fi
+s57="$(run "$TREE/bin/ogrinfo" --format S57 2>/dev/null)"
+case "$s57" in
+  *Supports:*) pass "S57 driver metadata resolves via GDAL_DATA" ;;
+  *)           fail "S57 driver metadata unavailable: ${s57:-<no output>}" ;;
+esac
 
 # GDAL's own SQLite dialect implements only a subset of the ST_* functions.
 # ST_PointOnSurface and ST_Centroid come from SpatiaLite, and the nautical
@@ -133,7 +133,7 @@ fi
 foreign=0
 while read -r l; do
   [ -z "$l" ] && continue
-  if ! echo "$l" | grep -qE "$allow"; then
+  if ! [[ $l =~ $allow ]]; then
     echo "      unexpected dependency: $l"; foreign=$((foreign+1))
   fi
 done <<< "$libs"

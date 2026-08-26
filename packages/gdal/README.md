@@ -107,21 +107,40 @@ a regression in PROJ embedding cannot hide behind a stray environment variable.
 
 ### Version scheme
 
-A release is `<gdal version>[.<build revision>]`, both derived in `versions.env`:
+A release is `<gdal version>.<commit timestamp>` — the upstream version from
+`versions.env`, plus the Unix timestamp of the commit being released.
+`./dist-version.sh` prints it, and both `build.sh` and the release workflow call
+that one script so they cannot disagree:
 
-| | |
-| --- | --- |
-| `GDAL_VERSION` | the upstream version, and what `pyproject.toml` must pin with `gdal==` |
-| `DIST_REVISION` | empty for the first release of that version; `1`, `2`, … for a rebuild that changes *how* GDAL is built without changing GDAL |
-| `DIST_VERSION` | derived — what the tag, the asset names and consumers all use |
+```console
+$ packages/gdal/dist-version.sh
+3.13.2.1787743451
+```
 
-So adding a dependency to GDAL 3.13.2 ships as `gdal-v3.13.2.1`, and the next
-upstream release resets the revision back to nothing: `gdal-v3.13.3`. The
-workflow refuses to publish if the tag and `DIST_VERSION` disagree. Never re-tag
+The revision is the **commit's** timestamp, not the clock's, for two reasons.
+The three platform jobs finish up to twenty minutes apart, so a build-time clock
+would stamp three different versions onto a single release and none of them
+would resolve. And deriving it from the commit makes a tag reproducible — there
+is no number to set wrong or forget to reset when `GDAL_VERSION` moves.
+
+Ordering falls out of the upstream components coming first, so a `3.13.3` built
+from an older commit still sorts above a later `3.13.2` rebuild:
+
+```
+3.13.2.1787743451 > 3.13.2.1787743019   later rebuild of the same version
+3.13.3.1000000000 > 3.13.2.1787743451   upstream bump always wins
+3.13.2.1787743019 > 3.13.2              a bare version sorts as .0
+```
+
+To release, tag the merged commit with what the script reports:
+
+```shell
+git tag "gdal-v$(packages/gdal/dist-version.sh)"
+```
+
+The workflow refuses to publish if the tag and the commit disagree. Never re-tag
 a published version, since the checksums change.
 
-Bumping `GDAL_VERSION` must reset `DIST_REVISION`; both workflows that edit
-`versions.env` do this automatically.
 
 `versions.env` pins every input by version and SHA256, so a tag rebuilds
 identically later. Bumping a dependency is a one-line change there.

@@ -57,6 +57,7 @@ jobs:
             container: quay.io/pypa/manylinux_2_28_aarch64
 
     steps:
+      # fetch-depth 1 still fetches the commit object, which is all %ct needs.
       - uses: actions/checkout@v7
 
       # The manylinux image already ships cmake, bzip2, gcc 14 and binutils;
@@ -84,8 +85,7 @@ jobs:
           url="https://github.com/OSGeo/gdal/releases/download/v${v}/gdal-${v}.tar.gz"
           sha="$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)"
           sed -i.bak -e "s/^GDAL_VERSION=.*/GDAL_VERSION=${v}/" \
-                     -e "s/^GDAL_SHA256=.*/GDAL_SHA256=${sha}/" \
-                     -e "s/^DIST_REVISION=.*/DIST_REVISION=/" versions.env
+                     -e "s/^GDAL_SHA256=.*/GDAL_SHA256=${sha}/" versions.env
           rm -f versions.env.bak
           echo "Building GDAL ${v} (sha256 ${sha})"
 
@@ -93,11 +93,13 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/gdal-v')
         run: |
           set -euo pipefail
-          . ./versions.env
           tagged="${GITHUB_REF_NAME#gdal-v}"
-          if [ "$tagged" != "$DIST_VERSION" ]; then
-            echo "tag $GITHUB_REF_NAME does not match DIST_VERSION=$DIST_VERSION" >&2
-            echo "(GDAL_VERSION=$GDAL_VERSION DIST_REVISION=${DIST_REVISION:-<none>})" >&2
+          expected="$(./dist-version.sh)"
+          if [ "$tagged" != "$expected" ]; then
+            echo "tag $GITHUB_REF_NAME does not match this commit" >&2
+            echo "  tag says:  $tagged" >&2
+            echo "  commit is: $expected" >&2
+            echo "Tag the commit you mean to release: git tag gdal-v\$(packages/gdal/dist-version.sh)" >&2
             exit 1
           fi
 
