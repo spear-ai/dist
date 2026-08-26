@@ -4,8 +4,13 @@ name: "tippecanoe: check for new releases"
 # versions.env; the tippecanoe workflow then builds and smoke-tests that PR on
 # all three platforms, so review is the only manual step.
 on:
-  schedule:
-    - cron: "30 13 * * 1"
+  # Schedule disabled while the tippecanoe package is still being built out.
+  # These files reached main early (swept in by an unrelated PR), and the
+  # tippecanoe build workflow does not pass yet, so a weekly bump PR would only
+  # produce red noise. Re-enable by uncommenting once the package is green.
+  #
+  # schedule:
+  #   - cron: "30 13 * * 1"
   workflow_dispatch:
 
 permissions:
