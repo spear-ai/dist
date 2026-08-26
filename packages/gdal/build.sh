@@ -44,12 +44,18 @@ if [ "$OS" = macos ]; then
   export MACOSX_DEPLOYMENT_TARGET
   EXTRA_LDFLAGS=""
   SQLITE_LDLIBS="-lm"
+  CXXLIB="-lc++"
+  # libspatialite's configure link-tests with the C compiler, so the static
+  # closure of PROJ (C++, needs sqlite3) has to be spelled out.
+  SPATIALITE_LIBS="-lsqlite3 -lc++"
 else
   RPATH='$ORIGIN/../lib'
   # Keep the C++ runtime inside our own binaries so the tarball does not
   # require a newer libstdc++ than the host happens to ship.
   EXTRA_LDFLAGS="-static-libstdc++ -static-libgcc"
   SQLITE_LDLIBS="-lm -ldl -lpthread"
+  CXXLIB="-lstdc++"
+  SPATIALITE_LIBS="-lsqlite3 -lstdc++ -lm -ldl -lpthread"
 fi
 
 if command -v ninja >/dev/null 2>&1; then GEN=(-G Ninja); else GEN=(-G "Unix Makefiles"); fi
@@ -88,12 +94,15 @@ fetch "https://download.osgeo.org/proj/proj-${PROJ_VERSION}.tar.gz" \
       "$PROJ_SHA256" "proj-${PROJ_VERSION}.tar.gz"
 fetch "https://download.osgeo.org/geos/geos-${GEOS_VERSION}.tar.bz2" \
       "$GEOS_SHA256" "geos-${GEOS_VERSION}.tar.bz2"
+fetch "https://www.gaia-gis.it/gaia-sins/libspatialite-sources/libspatialite-${SPATIALITE_VERSION}.tar.gz" \
+      "$SPATIALITE_SHA256" "libspatialite-${SPATIALITE_VERSION}.tar.gz"
 fetch "https://github.com/OSGeo/gdal/releases/download/v${GDAL_VERSION}/gdal-${GDAL_VERSION}.tar.gz" \
       "$GDAL_SHA256" "gdal-${GDAL_VERSION}.tar.gz"
 
 extract "sqlite-autoconf-${SQLITE_ARCHIVE_VERSION}.tar.gz" "sqlite-autoconf-${SQLITE_ARCHIVE_VERSION}"
 extract "proj-${PROJ_VERSION}.tar.gz"   "proj-${PROJ_VERSION}"
 extract "geos-${GEOS_VERSION}.tar.bz2"  "geos-${GEOS_VERSION}"
+extract "libspatialite-${SPATIALITE_VERSION}.tar.gz" "libspatialite-${SPATIALITE_VERSION}"
 extract "gdal-${GDAL_VERSION}.tar.gz"   "gdal-${GDAL_VERSION}"
 
 # ------------------------------------------------------------------ sqlite --
@@ -170,6 +179,57 @@ if [ ! -f "$DEPS/lib/libgeos_c.a" ]; then
   cmake --install "$WORK/build-geos"
 fi
 
+# ------------------------------------------------------------- spatialite --
+# GDAL's built-in SQLite dialect implements only a subset of the ST_* functions
+# (ST_Area, ST_Buffer, ST_MakeValid) and omits ST_PointOnSurface and
+# ST_Centroid, so SQL that places one label point per feature fails at runtime
+# with "no such function". SpatiaLite supplies the full set.
+if [ ! -f "$DEPS/lib/libspatialite.a" ]; then
+  log "build libspatialite $SPATIALITE_VERSION (static)"
+
+  # libspatialite's configure does LIBS="$(geos-config --ldflags)" -- clobbering
+  # whatever we pass -- and then link-tests a bare -lgeos_c. GEOS 3.14's
+  # --ldflags returns only -L<dir>, which cannot resolve a static libgeos_c.a.
+  # A shim returning the full static C link line fixes it without patching
+  # upstream sources.
+  cat > "$WORK/geos-config-static" <<SHIM
+#!/bin/sh
+case "\$1" in
+  --ldflags) echo "-L$DEPS/lib -lgeos_c -lgeos $CXXLIB -lm" ;;
+  *) exec "$DEPS/bin/geos-config" "\$@" ;;
+esac
+SHIM
+  chmod +x "$WORK/geos-config-static"
+
+  # libspatialite 5.1.0 ships config.guess/config.sub stamped 2009-11-20, which
+  # predate aarch64 and abort with "cannot guess build type" on ARM Linux.
+  # Refresh them from the host's automake copies, as distro packaging does.
+  for f in config.guess config.sub; do
+    for d in /usr/share/automake-* /usr/share/gnuconfig \
+             /usr/share/libtool/build-aux /opt/homebrew/share/automake-*; do
+      if [ -f "$d/$f" ]; then
+        cp -f "$d/$f" "$SRC/libspatialite-${SPATIALITE_VERSION}/$f"
+        break
+      fi
+    done
+  done
+
+  ( cd "$SRC/libspatialite-${SPATIALITE_VERSION}"
+    ./configure \
+      --prefix="$DEPS" \
+      --enable-static --disable-shared \
+      --disable-freexl --disable-rttopo --disable-libxml2 \
+      --disable-minizip --disable-examples \
+      --with-geosconfig="$WORK/geos-config-static" \
+      CFLAGS="-fPIC -O2" \
+      CPPFLAGS="-I$DEPS/include" \
+      LDFLAGS="-L$DEPS/lib" \
+      LIBS="$SPATIALITE_LIBS" \
+      PKG_CONFIG_PATH="$DEPS/lib/pkgconfig"
+    make -j "$JOBS"
+    make install )
+fi
+
 # -------------------------------------------------------------------- gdal --
 # GDAL_USE_EXTERNAL_LIBS=OFF is the flag that makes this build deterministic:
 # nothing is picked up merely because it happens to be installed on the runner.
@@ -182,6 +242,9 @@ fi
 # so proj.db *is* embedded -- which is the half that actually matters, since it
 # is the file that silently goes out of sync and drags 774 MB of grids along.
 log "build gdal $GDAL_VERSION (shared, deps linked in)"
+# FindSPATIALITE reads the version through pkg-config and GDAL requires >= 4.1.2,
+# so the .pc directory has to be on PKG_CONFIG_PATH or the check silently fails.
+export PKG_CONFIG_PATH="$DEPS/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
 # Configure from scratch: a stale CMake cache silently keeps old option values,
 # which makes a rerun disagree with the flags actually written below.
 rm -rf "$OUT" "$WORK/build-gdal"; mkdir -p "$OUT"
@@ -202,6 +265,12 @@ cmake -S "$SRC/gdal-${GDAL_VERSION}" -B "$WORK/build-gdal" "${GEN[@]}" \
   -DGDAL_USE_SQLITE3=ON \
   -DGDAL_USE_GEOS=ON \
   -DGDAL_USE_ICONV=ON \
+  -DGDAL_USE_SPATIALITE=ON \
+  `# libspatialite calls zlib's crc32. GDAL renames its internal zlib symbols` \
+  `# by default, so that reference cannot resolve. Using the standard names` \
+  `# keeps zlib inside libgdal -- where -fvisibility=hidden keeps it private --` \
+  `# instead of adding an external libz dependency to the tarball.` \
+  -DRENAME_INTERNAL_ZLIB_SYMBOLS=OFF \
   -DSQLite3_INCLUDE_DIR="$DEPS/include" \
   -DSQLite3_LIBRARY="$DEPS/lib/libsqlite3.a" \
   -DGDAL_BUILD_OPTIONAL_DRIVERS=OFF \
