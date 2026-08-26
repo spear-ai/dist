@@ -53,9 +53,19 @@ if [ "$OS" = macos ]; then
   SPATIALITE_LIBS="-lsqlite3 -lc++"
 else
   RPATH='$ORIGIN/../lib'
-  # Keep the C++ runtime inside our own binaries so the tarball does not
-  # require a newer libstdc++ than the host happens to ship.
-  EXTRA_LDFLAGS="-static-libstdc++ -static-libgcc"
+  # Link the C++ runtime dynamically. -static-libstdc++ gave libgdal.so its own
+  # private operator new/delete, __cxa_throw and RTTI, while the PyPI bindings'
+  # _gdal.so links libstdc++.so.6 -- two C++ runtimes in one process. SWIG wraps
+  # every GDAL call in try/catch, so exceptions and C++ objects cross that
+  # boundary constantly, and duplicated type_info means a catch can fail to
+  # match. GCC's own docs require the *shared* libgcc for exactly this case:
+  # throwing exceptions across shared library boundaries.
+  #
+  # Portability is unaffected. gcc-toolset links the base system's libstdc++ ABI
+  # dynamically and statically includes only the newer symbols, so the result
+  # needs GLIBCXX_3.4.21 -- below AlmaLinux 8's 3.4.25 -- and manylinux
+  # whitelists libstdc++.so.6 anyway.
+  EXTRA_LDFLAGS=""
   SQLITE_LDLIBS="-lm -ldl -lpthread"
   CXXLIB="-lstdc++"
   SPATIALITE_LIBS="-lsqlite3 -lstdc++ -lm -ldl -lpthread"

@@ -108,6 +108,34 @@ ST_MakeValid|ST_MakeValid(ST_GeomFromText('$poly'))|POLYGON
 ST_Buffer|ST_Buffer(ST_GeomFromText('$poly'),1)|POLYGON
 SQLCHECKS
 
+# A private C++ runtime inside libgdal is invisible to every functional check
+# but breaks exceptions and RTTI across the boundary to the Python bindings,
+# which link libstdc++ dynamically. Assert one shared runtime.
+sect "C++ runtime"
+if [ "$(uname -s)" = Darwin ]; then
+  if otool -L "$TREE/lib/libgdal.dylib" 2>/dev/null | grep -q "libc++"; then
+    pass "libgdal links the platform C++ runtime"
+  else
+    fail "libgdal does not link libc++ - it may carry a private C++ runtime"
+  fi
+else
+  needed="$(readelf -d "$TREE/lib/libgdal.so" 2>/dev/null)"
+  case "$needed" in
+    *libstdc++.so.6*) pass "libgdal links libstdc++.so.6 dynamically" ;;
+    *) fail "libgdal has no libstdc++ dependency - it carries a private C++ runtime" ;;
+  esac
+  # operator new / __cxa_throw defined here means a second, private copy.
+  dup=0
+  for sym in _Znwm _ZdlPv __cxa_throw; do
+    if nm -D --defined-only "$TREE/lib/libgdal.so" 2>/dev/null | grep -qw "$sym" \
+       || nm -a "$TREE/lib/libgdal.so" 2>/dev/null | grep -qE " [tT] $sym\$"; then
+      echo "      libgdal defines its own $sym"; dup=$((dup+1))
+    fi
+  done
+  [ "$dup" -eq 0 ] && pass "no duplicate C++ runtime symbols in libgdal" \
+                   || fail "$dup duplicated C++ runtime symbol(s) - exceptions across the binding boundary are unsafe"
+fi
+
 sect "layout"
 if [ -d "$TREE/lib" ] && [ ! -d "$TREE/lib64" ]; then
   pass "libraries are in lib/ on every platform"
