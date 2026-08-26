@@ -384,6 +384,11 @@ rm -rf "$OUT/lib"/*.a "$OUT/share/proj" "$OUT/share/doc" "$OUT/share/man" 2>/dev
 # ------------------------------------------------------------------ package --
 TARBALL="gdal-${DIST_VERSION}-${PLATFORM}.tar.gz"
 log "package $TARBALL"
+# Start from an empty dist dir. A rerun after a version or revision change
+# otherwise leaves the previous tarball beside the new one, and the release
+# workflow uploads everything it finds -- which would attach an asset from a
+# different version to the release.
+rm -rf "$DIST"
 mkdir -p "$DIST"
 tar -C "$OUT" -czf "$DIST/$TARBALL" .
 ( cd "$DIST" && { command -v sha256sum >/dev/null && sha256sum "$TARBALL" || shasum -a 256 "$TARBALL"; } > "$TARBALL.sha256" )
