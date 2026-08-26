@@ -233,6 +233,7 @@ SHIM
       --enable-static --disable-shared \
       --disable-freexl --disable-rttopo --disable-libxml2 \
       --disable-minizip --disable-examples \
+      --enable-geosreentrant \
       --with-geosconfig="$WORK/geos-config-static" \
       CFLAGS="-fPIC -O2" \
       CPPFLAGS="-I$DEPS/include" \
@@ -278,6 +279,10 @@ cmake -S "$SRC/gdal-${GDAL_VERSION}" -B "$WORK/build-gdal" "${GEN[@]}" \
   -DGDAL_USE_SQLITE3=ON \
   -DGDAL_USE_GEOS=ON \
   -DGDAL_USE_ICONV=ON \
+  `# Off already, but only because GDAL_USE_EXTERNAL_LIBS=OFF stops it being` \
+  `# found. State it: OpenMP is a second threading runtime, and consumers of` \
+  `# this build drive GDAL from their own thread pools. Homebrew also sets it.` \
+  -DGDAL_USE_OPENMP=OFF \
   -DGDAL_USE_SPATIALITE=ON \
   `# libspatialite calls zlib's crc32. GDAL renames its internal zlib symbols` \
   `# by default, so that reference cannot resolve. Using the standard names` \

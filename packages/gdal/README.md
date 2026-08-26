@@ -172,6 +172,20 @@ Three upstream quirks are worked around in `build.sh`, each commented there:
   aarch64 and abort with `cannot guess build type` on ARM Linux. The build
   refreshes them from the host's automake copies, as distro packaging does.
 
+**Two threading choices are stated explicitly rather than left to chance.**
+`GDAL_USE_OPENMP=OFF` was already the outcome, but only because
+`GDAL_USE_EXTERNAL_LIBS=OFF` meant OpenMP was never found — a second threading
+runtime should not be enabled or disabled by accident when consumers drive GDAL
+from their own thread pools. libspatialite also gets
+`--enable-geosreentrant`, though only as a guard: it makes `configure` hard-fail
+if the reentrant GEOS API is missing. It does **not** change the compiled output,
+because libspatialite's `config.h.in` carries no template for `GEOS_REENTRANT`
+(nor for any other `GEOS_*`), so `AC_DEFINE` fires during configure and the macro
+is then dropped — `DEFS` is only `-DHAVE_CONFIG_H`. That is true of every
+libspatialite build including Homebrew's, and the library calls the reentrant
+`GEOS*_r` API in 95 places regardless, so reentrancy is largely in effect
+independent of the macro.
+
 **GNM is enabled even though nothing here uses it.** The PyPI `gdal` sdist
 compiles `extensions/gnm_wrap.cpp` unconditionally, so a libgdal built with
 `ENABLE_GNM=OFF` installs no `gnm_api.h` and the Python bindings fail to
