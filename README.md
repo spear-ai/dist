@@ -44,15 +44,29 @@ Workflows must live at the repository root, so they are named per package:
 gdal = "github:spear-ai/dist"
 
 [tools]
-gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{version}}-{{os()}}-{{arch()}}.tar.gz" }
+gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz" }
 ```
 
 `version_prefix` is what lets several packages share one repository: mise lists
 only `gdal-v*` tags as versions for this tool and strips the prefix, so
 `mise ls-remote gdal` shows `3.13.2`.
 
+Note the spaces inside `{{ version }}`. Without them mise warns that the
+template uses deprecated legacy syntax.
+
 Releases carry GitHub build provenance attestations, which mise verifies by
-default.
+default — an install logs `✓ GitHub artifact attestations verified`.
+
+Two things worth knowing, both verified against a private repo:
+
+- **Private repos need no token setup.** mise's `github.gh_cli_tokens` defaults
+  to `true`, so anyone already `gh auth login`-ed can install. Nothing extra in
+  `mise.toml`, no `GITHUB_TOKEN` in the environment.
+- **A freshly published release is hidden from `mise ls-remote` for a while**
+  by mise's release-age gate (`1 newer gdal release hidden by
+  minimum_release_age`). Installing a pinned version works immediately
+  regardless; only `latest` resolution and `mise outdated` wait it out. Since
+  every consumer here pins an exact version, this affects nothing in practice.
 
 ## Adding a package
 

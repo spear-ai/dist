@@ -65,7 +65,7 @@ Two further consequences worth knowing:
 gdal = "github:spear-ai/dist"
 
 [tools]
-gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{version}}-{{os()}}-{{arch()}}.tar.gz" }
+gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{ version }}-{{ os() }}-{{ arch() }}.tar.gz" }
 
 [env]
 # GDAL's setup.py records no rpath on its extension modules, so without this the
