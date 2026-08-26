@@ -1,0 +1,4 @@
+# Build trees. `build.sh` honors WORK_DIR, so out-of-tree names show up here
+# too (work-linux/ is what the Docker cross-check uses).
+work/
+work-*/

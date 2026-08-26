@@ -1,0 +1,58 @@
+name: "gdal: check for new releases"
+
+# GDAL ships a minor every May and November and a patch roughly monthly.
+# This opens a PR bumping versions.env; the gdal workflow then builds and
+# smoke-tests that PR on all three platforms, so review is the only manual step.
+on:
+  schedule:
+    - cron: "0 13 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: packages/gdal
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Compare upstream against versions.env
+        id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          source versions.env
+          latest="$(gh release list -R OSGeo/gdal --limit 20 --exclude-drafts --exclude-pre-releases \
+                    --json tagName --jq '.[].tagName' | sed 's/^v//' | sort -V | tail -1)"
+          echo "current=$GDAL_VERSION  latest=$latest"
+          if [ "$latest" = "$GDAL_VERSION" ]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          url="https://github.com/OSGeo/gdal/releases/download/v${latest}/gdal-${latest}.tar.gz"
+          sha="$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)"
+          sed -i -e "s/^GDAL_VERSION=.*/GDAL_VERSION=${latest}/" \
+                 -e "s/^GDAL_SHA256=.*/GDAL_SHA256=${sha}/" versions.env
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+          echo "version=$latest" >> "$GITHUB_OUTPUT"
+
+      - name: Open bump PR
+        if: steps.check.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v8
+        with:
+          branch: bump-gdal-${{ steps.check.outputs.version }}
+          title: "Bump GDAL to ${{ steps.check.outputs.version }}"
+          commit-message: "Bump GDAL to ${{ steps.check.outputs.version }}"
+          body: |
+            Upstream released GDAL ${{ steps.check.outputs.version }}.
+
+            CI builds and smoke-tests this PR on all three platforms. Merging
+            does not publish anything: tag the merged commit
+            `gdal-v${{ steps.check.outputs.version }}` to cut the release.
+
+            Remember to bump the matching `gdal==` pin in `horizon-cartography`.
