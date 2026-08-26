@@ -51,6 +51,36 @@ gdal = { version = "3.13.2", version_prefix = "gdal-v", asset_pattern = "gdal-{{
 only `gdal-v*` tags as versions for this tool and strips the prefix, so
 `mise ls-remote gdal` shows `3.13.2`.
 
+## Keeping consumers up to date with Renovate
+
+Renovate's mise manager cannot see a `[tool_alias]` entry — it resolves bare tool
+names against mise's public registry — so consumers need a `customManager`, and
+it **must** set `versioning: "loose"`:
+
+```json
+{
+  "customType": "regex",
+  "datasourceTemplate": "github-releases",
+  "depNameTemplate": "spear-ai/dist",
+  "managerFilePatterns": ["(^|/)mise\\.toml$"],
+  "matchStrings": ["gdal = \\{ version = \"(?<currentValue>[^\"]+)\""],
+  "extractVersionTemplate": "^gdal-v(?<version>.+)$",
+  "versioningTemplate": "loose"
+}
+```
+
+Renovate's default is `semver-coerced`, which coerces `3.13.2.1` to `3.13.2` and
+so compares a build revision as **equal** to the version it rebuilds — meaning
+those releases would never produce a PR, silently and forever. `loose` orders
+them correctly and still derives major/minor/patch from the first three
+components, so `matchUpdateTypes` rules keep working. `extractVersion` also
+filters the datasource down to this package's tags, so other packages in this
+repo are ignored automatically.
+
+A rebuild and an upstream patch both classify as `patch`. To treat them
+differently, match on shape instead:
+`"matchNewValue": "/^\\d+\\.\\d+\\.\\d+\\.\\d+$/"` is a rebuild.
+
 ## Adding a package
 
 1. Create `packages/<name>/` with the four files above. `build.sh` should

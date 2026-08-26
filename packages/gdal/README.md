@@ -105,8 +105,23 @@ a regression in PROJ embedding cannot hide behind a stray environment variable.
 3. It then produces all three tarballs, smoke-tests each, attaches
    `SHA256SUMS`, and attests build provenance — which `mise` verifies by default.
 
-Rebuilding the same GDAL version (a toolchain fix, say) gets a fourth version
-component: `gdal-v3.13.2.1`. Never re-tag, since the checksums change.
+### Version scheme
+
+A release is `<gdal version>[.<build revision>]`, both derived in `versions.env`:
+
+| | |
+| --- | --- |
+| `GDAL_VERSION` | the upstream version, and what `pyproject.toml` must pin with `gdal==` |
+| `DIST_REVISION` | empty for the first release of that version; `1`, `2`, … for a rebuild that changes *how* GDAL is built without changing GDAL |
+| `DIST_VERSION` | derived — what the tag, the asset names and consumers all use |
+
+So adding a dependency to GDAL 3.13.2 ships as `gdal-v3.13.2.1`, and the next
+upstream release resets the revision back to nothing: `gdal-v3.13.3`. The
+workflow refuses to publish if the tag and `DIST_VERSION` disagree. Never re-tag
+a published version, since the checksums change.
+
+Bumping `GDAL_VERSION` must reset `DIST_REVISION`; both workflows that edit
+`versions.env` do this automatically.
 
 `versions.env` pins every input by version and SHA256, so a tag rebuilds
 identically later. Bumping a dependency is a one-line change there.

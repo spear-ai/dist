@@ -382,7 +382,7 @@ fi
 rm -rf "$OUT/lib"/*.a "$OUT/share/proj" "$OUT/share/doc" "$OUT/share/man" 2>/dev/null || true
 
 # ------------------------------------------------------------------ package --
-TARBALL="gdal-${GDAL_VERSION}-${PLATFORM}.tar.gz"
+TARBALL="gdal-${DIST_VERSION}-${PLATFORM}.tar.gz"
 log "package $TARBALL"
 mkdir -p "$DIST"
 tar -C "$OUT" -czf "$DIST/$TARBALL" .

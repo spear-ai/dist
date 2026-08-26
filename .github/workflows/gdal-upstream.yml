@@ -37,8 +37,10 @@ jobs:
           fi
           url="https://github.com/OSGeo/gdal/releases/download/v${latest}/gdal-${latest}.tar.gz"
           sha="$(curl -fsSL "$url" | sha256sum | cut -d' ' -f1)"
+          # A new upstream version starts at build revision zero.
           sed -i -e "s/^GDAL_VERSION=.*/GDAL_VERSION=${latest}/" \
-                 -e "s/^GDAL_SHA256=.*/GDAL_SHA256=${sha}/" versions.env
+                 -e "s/^GDAL_SHA256=.*/GDAL_SHA256=${sha}/" \
+                 -e "s/^DIST_REVISION=.*/DIST_REVISION=/" versions.env
           echo "changed=true" >> "$GITHUB_OUTPUT"
           echo "version=$latest" >> "$GITHUB_OUTPUT"
 
@@ -55,5 +57,6 @@ jobs:
             CI builds and smoke-tests this PR on all three platforms. Merging
             does not publish anything: tag the merged commit
             `gdal-v${{ steps.check.outputs.version }}` to cut the release.
+            DIST_REVISION has been reset, so the tag carries no fourth component.
 
             Remember to bump the matching `gdal==` pin in `horizon-cartography`.
