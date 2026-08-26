@@ -86,6 +86,28 @@ else
   fail "S57 driver metadata unavailable"
 fi
 
+# GDAL's own SQLite dialect implements only a subset of the ST_* functions.
+# ST_PointOnSurface and ST_Centroid come from SpatiaLite, and the nautical
+# label step fails at runtime without them ("no such function"), so assert the
+# exact set the pipeline calls.
+sect "SQL functions (SpatiaLite)"
+poly="POLYGON((0 0,0 10,10 10,10 0,0 0))"
+while IFS='|' read -r name expr expect; do
+  [ -z "$name" ] && continue
+  out="$(run "$TREE/bin/ogrinfo" -q -dialect SQLITE \
+         -sql "SELECT ST_AsText($expr) AS g" "$tmp/in.geojson" 2>&1)"
+  case "$out" in
+    *"no such function"*) fail "$name unavailable - SpatiaLite not linked in" ;;
+    *"$expect"*)          pass "$name" ;;
+    *)                    fail "$name: $(echo "$out" | tail -1)" ;;
+  esac
+done <<SQLCHECKS
+ST_PointOnSurface|ST_PointOnSurface(ST_GeomFromText('$poly'))|POINT
+ST_Centroid|ST_Centroid(ST_GeomFromText('$poly'))|POINT
+ST_MakeValid|ST_MakeValid(ST_GeomFromText('$poly'))|POLYGON
+ST_Buffer|ST_Buffer(ST_GeomFromText('$poly'),1)|POLYGON
+SQLCHECKS
+
 sect "layout"
 if [ -d "$TREE/lib" ] && [ ! -d "$TREE/lib64" ]; then
   pass "libraries are in lib/ on every platform"

@@ -118,6 +118,26 @@ predictable. Currently enabled: **S57, GeoJSON, ESRI Shapefile, FlatGeobuf,
 GPKG, SQLite, MVT, PMTiles, CSV, VRT** (vector) and **GTiff, PNG, JPEG, MEM,
 VRT** (raster).
 
+**SpatiaLite is linked in** for its `ST_*` SQL functions. GDAL's own SQLite
+dialect implements only a subset — `ST_Area`, `ST_Buffer`, `ST_MakeValid` — and
+omits `ST_PointOnSurface` and `ST_Centroid`, so SQL that places one label point
+per feature fails at runtime with `no such function: ST_PointOnSurface`.
+libspatialite's optional dependencies (freexl, librttopo, libxml2, minizip) are
+all disabled; what remains is SQLite, PROJ, GEOS and iconv, which this build
+already produces. Costs about 3 MB.
+
+Three upstream quirks are worked around in `build.sh`, each commented there:
+
+- Its `configure` clobbers `LIBS` with `geos-config --ldflags` and then
+  link-tests a bare `-lgeos_c`. GEOS 3.14's `--ldflags` returns only `-L<dir>`,
+  which cannot resolve a static `libgeos_c.a`, so the build passes a
+  `geos-config` shim that returns the full static C link line.
+- It calls zlib's `crc32`, which forces `RENAME_INTERNAL_ZLIB_SYMBOLS=OFF` so
+  GDAL's internal zlib keeps its standard names. Do not re-enable that rename.
+- It ships `config.guess`/`config.sub` stamped 2009-11-20, which predate
+  aarch64 and abort with `cannot guess build type` on ARM Linux. The build
+  refreshes them from the host's automake copies, as distro packaging does.
+
 **GNM is enabled even though nothing here uses it.** The PyPI `gdal` sdist
 compiles `extensions/gnm_wrap.cpp` unconditionally, so a libgdal built with
 `ENABLE_GNM=OFF` installs no `gnm_api.h` and the Python bindings fail to
@@ -139,6 +159,30 @@ Notable exclusions, and what to do if you need them:
 | netCDF / HDF5 | No scientific array formats. | Add the libs, enable the drivers |
 | PostgreSQL | No `PG:` connection strings. | Add libpq, `-DGDAL_USE_POSTGRESQL=ON` |
 | Python bindings | Built from the PyPI sdist by `uv` instead, against your own pinned Python. | n/a — the Homebrew ones target its Python, not yours |
+
+## `GDAL_DATA` is load-bearing
+
+Because this build is relocatable, GDAL finds its resource files **only** through
+`GDAL_DATA` — it checks `.`, then that variable, then a compile-time absolute
+prefix that does not exist on your machine. Homebrew masked this by having a
+real compile-time path.
+
+Anything that scrubs the environment will therefore break resource lookup:
+turbo tasks (add `GDAL_DATA` to `globalPassThroughEnv`), `docker run` without
+`-e`, CI sandboxes, `env -i` wrappers.
+
+**It fails silently, which is the dangerous part.** Observed on the nautical
+pipeline with `GDAL_DATA` stripped:
+
+| | S-57 layers reported |
+| --- | --- |
+| With `GDAL_DATA` | 26 named object classes — ADMARE, COALNE, DEPARE, … |
+| Without | 5 generic — DSID, Point, Line, Area, Meta |
+
+The run still exited 0. It emitted 1,000 `Invalid index : -1` warnings, selected
+0 label layers instead of 6, and produced a 54.71 MB tileset instead of 75.09 MB
+— a chart with no named features, with CI green. If a pipeline can run without
+resources present, assert on the output rather than the exit code.
 
 ## Licensing
 
