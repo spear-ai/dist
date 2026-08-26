@@ -102,8 +102,10 @@ No `[env]` entries. See above.
 
 ```shell
 ./build.sh                 # ~2 min cold; writes work/dist/tippecanoe-<ver>-<platform>.tar.gz
-                           # macos-arm64:  3.5 MB packed,  7 MB installed
-                           # linux-arm64:  6.3 MB packed, 13 MB installed
+                           # macos-arm64: 3.7 MB packed,  7.3 MB installed
+                           # linux-arm64: 5.6 MB packed, 13.1 MB installed
+                           # linux-x64:   5.9 MB packed, 13.3 MB installed
+                           # Linux is larger because libstdc++ is linked in.
 ./smoke-test.sh            # structural + functional checks
 ```
 
@@ -186,14 +188,19 @@ Three upstream quirks are worked around in `build.sh`, each commented there:
   (merged in 2.34), so the build fails on one binary, on Linux only — macOS has
   both in libSystem. `build.sh` adds `-lpthread -ldl` on Linux.
 
-**The C++ runtime is linked statically on Linux, and `gdal` links it
-dynamically.** That divergence is deliberate and is commented in both
-`build.sh` files. `libgdal` shares a process with the PyPI bindings' `_gdal.so`,
-which links `libstdc++` dynamically; a private runtime inside `libgdal` would
-mean two of them and exceptions that fail to match across the boundary.
-tippecanoe ships standalone executables — nothing links or loads them, so there
-is no boundary, and static removes the `libstdc++` version floor from the
-tarball entirely.
+**The C++ runtime is linked statically on Linux, where `gdal` must link it
+dynamically.** That divergence is deliberate; do not harmonise the two. The rule
+is about boundaries. A library that ends up in the same process as C++ code it
+did not compile has to share that process's runtime, or there are two
+allocators, two unwinders and two sets of `type_info`, and an exception thrown
+on one side can fail to match a `catch` on the other. `libgdal` is loaded
+alongside the PyPI bindings' `_gdal.so`, which links `libstdc++` dynamically, so
+it is bound by that rule.
+
+tippecanoe ships standalone executables. Nothing links against them and nothing
+loads them, so no exception ever crosses a boundary and the rule does not apply
+— which makes static the better answer here, because it removes the `libstdc++`
+version floor from the tarball entirely.
 
 ## Licensing
 

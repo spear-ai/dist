@@ -58,13 +58,17 @@ else
   # Keep the C++ runtime inside our own binaries, so the tarball does not
   # require a newer libstdc++ than the host happens to ship.
   #
-  # packages/gdal deliberately does the opposite, and the difference is not an
-  # inconsistency: libgdal is loaded into the same process as the PyPI bindings'
-  # _gdal.so, which links libstdc++ dynamically, so a private runtime inside
-  # libgdal means two runtimes and exceptions that fail to match across the
-  # boundary. tippecanoe ships six standalone executables. Nothing links
-  # against them, nothing loads them, so there is no boundary for an exception
-  # to cross -- and static is then strictly better, because it removes the
+  # packages/gdal must do the opposite, and the difference is not an
+  # inconsistency to be tidied away. The rule is about boundaries: a library
+  # that ends up in the same process as C++ code it did not compile has to
+  # share that process's runtime, or there are two allocators, two unwinders
+  # and two sets of type_info, and an exception thrown on one side can fail to
+  # match a catch on the other. libgdal is loaded alongside the PyPI bindings'
+  # _gdal.so, which links libstdc++ dynamically, so it is bound by that rule.
+  #
+  # tippecanoe ships six standalone executables. Nothing links against them and
+  # nothing loads them, so no exception ever crosses a boundary and the rule
+  # does not apply. Static is then strictly better, because it removes the
   # libstdc++ version floor from the tarball entirely.
   EXTRA_LDFLAGS="-static-libstdc++ -static-libgcc"
 fi
@@ -143,9 +147,17 @@ log "tippecanoe $TIPPECANOE_VERSION @ $head_sha"
 # Built straight from the amalgamation rather than via configure: two commands,
 # no autotools surprises, and full control over the feature defines. These are
 # the same defines packages/gdal uses, so one SQLite behaves like the other.
-# -fPIC is not optional: tippecanoe compiles itself -fPIE, and on x86-64 a
-# non-PIC archive linked into a PIE executable fails with a relocation error
-# (aarch64 happens to tolerate it, which is how this hides until linux-x64).
+# Built -fPIC as insurance rather than necessity. tippecanoe compiles itself
+# -fPIE but does not pass -pie when linking, and this image's gcc-toolset does
+# not default to it either, so today's binaries come out ELF type EXEC and a
+# non-PIC archive would link fine. That is a property of the toolchain, not of
+# this build: many distributions default to PIE linking, and there a non-PIC
+# archive fails with
+#   relocation R_X86_64_32S against symbol `x' can not be used when making a
+#   PIE object; recompile with -fPIE
+# on x86-64 while aarch64 tolerates it -- so it would appear on one platform
+# only, and only after a toolchain change. -fPIC costs nothing and removes the
+# dependency on that default entirely.
 if [ ! -f "$DEPS/lib/libsqlite3.a" ]; then
   log "build sqlite $SQLITE_VERSION (static)"
   mkdir -p "$DEPS/lib" "$DEPS/include"
@@ -163,7 +175,7 @@ fi
 
 # -------------------------------------------------------------------- zlib --
 # tippecanoe links -lz for mbtiles/pbf compression. Static, and -fPIC for the
-# same PIE reason as sqlite above.
+# same reason as sqlite above.
 if [ ! -f "$DEPS/lib/libz.a" ]; then
   log "build zlib $ZLIB_VERSION (static)"
   ( cd "$SRC/zlib-${ZLIB_VERSION}"
