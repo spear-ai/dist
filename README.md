@@ -1,14 +1,14 @@
-<img src=".github/assets/logo.png" alt="" width="64">  
+<img src=".github/assets/logo.png" alt="" width="64">
 
 `dist/*`
 
 Prebuilt distributions (binaries, library, toolchains, etc.) published as GitHub releases.  
 For things that should have existed already, but don’t.
 
-| Name | Version | Platforms |
-| --- | --- | --- |
-| [GDAL](https://gdal.org/en/stable) | 3.13.2 | `linux-arm64`, `linux-x64`, `macos-arm64` |
-| [tippecanoe](https://github.com/mapbox/tippecanoe) | 2.79.0 | `linux-arm64`, `linux-x64`, `macos-arm64` |
+| Name                                               | Version | Platforms                                 |
+| -------------------------------------------------- | ------- | ----------------------------------------- |
+| [GDAL](https://gdal.org/en/stable)                 | 3.13.2  | `linux-arm64`, `linux-x64`, `macos-arm64` |
+| [tippecanoe](https://github.com/mapbox/tippecanoe) | 2.79.0  | `linux-arm64`, `linux-x64`, `macos-arm64` |
 
 <small>Distributions follow upstream version numbers appended by a timestamp. e.g., `upstream@1.2.3` -> `upstream-v1.2.3.1787832000`</small>
 
@@ -48,10 +48,12 @@ For usage with [Renovate](https://github.com/renovatebot/renovate) to manage dep
       "datasourceTemplate": "github-releases",
       "extractVersionTemplate": "^{{{depName}}}-v(?<version>.+)$",
       "managerFilePatterns": ["(^|/)mise\\.toml$"],
-      "matchStrings": ["version = \"(?<currentValue>[^\"]+)\", version_prefix = \"(?<depName>[\\w-]+)-v\""],
+      "matchStrings": [
+        "version = \"(?<currentValue>[^\"]+)\", version_prefix = \"(?<depName>[\\w-]+)-v\"",
+      ],
       "packageNameTemplate": "spear-ai/dist",
-      "versioningTemplate": "loose"
-    }
+      "versioningTemplate": "loose",
+    },
   ],
 }
 ```
