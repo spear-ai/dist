@@ -1,16 +1,13 @@
-# dist
+<img src=".github/assets/logo.png" alt="" width="64">  
 
-Prebuilt, self-contained toolchains published as GitHub releases for `mise`.
+`dist/*`
 
-Each distribution lives under `packages/` and owns its build recipe, its pinned
-inputs, and its tests. Packages are tagged and released independently.
+Prebuilt distributions published as GitHub releases. When none exist for no good reason.
 
-## Packages
-
-| Package | Version | Platforms |
+| Name | Version | Platforms |
 | --- | --- | --- |
-| [gdal](packages/gdal) | 3.13.2 | `macos-arm64`, `linux-arm64`, `linux-x64` |
-| [tippecanoe](packages/tippecanoe) | 2.79.0 | `macos-arm64`, `linux-arm64`, `linux-x64` |
+| [GDAL]([packages/gdal](https://gdal.org/en/stable/)) | 3.13.2 | `linux-arm64`, `linux-x64`, `macos-arm64` |
+| [tippecanoe]([packages/tippecanoe](https://github.com/mapbox/tippecanoe)) | 2.79.0 | `linux-arm64`, `linux-x64`, `macos-arm64` |
 
 ## Conventions
 
