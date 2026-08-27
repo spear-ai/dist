@@ -19,6 +19,8 @@ For usage with [mise](https://mise.jdx.dev) to manage dev tooling.
 **mise.toml**
 
 ```toml
+#:schema https://mise.jdx.dev/schema/mise.json
+
 [env]
 GDAL_DATA = { value = "{{ tools.gdal.path }}/share/gdal", tools = true }
 LDFLAGS = { value = "${LDFLAGS:-} -Wl,-rpath,{{ tools.gdal.path }}/lib", tools = true }
